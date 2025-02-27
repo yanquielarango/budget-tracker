@@ -1,39 +1,109 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import { Stack, useRouter, useSegments} from "expo-router";
+import { useEffect } from "react";
 import * as SplashScreen from 'expo-splash-screen';
-import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
-import 'react-native-reanimated';
+import { StatusBar } from "expo-status-bar";
+import { ConvexProviderWithClerk } from "convex/react-clerk";
+import { ConvexReactClient } from "convex/react";
+import "@/global.css";
+import { GluestackUIProvider } from "@/components/ui/gluestack-ui-provider";
 
-import { useColorScheme } from '@/hooks/useColorScheme';
+import { ClerkLoaded, ClerkProvider, useAuth } from "@clerk/clerk-expo";
+import { tokenCache } from "@/utils/cache";
+import {useFonts} from "expo-font";
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  const [loaded] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+
+SplashScreen.setOptions({
+  duration: 1000,
+  fade: true,
+});
+
+
+
+const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!
+
+if (!publishableKey) {
+  throw new Error('Add EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY in your .env')
+}
+
+
+
+const convex = new ConvexReactClient(process.env.EXPO_PUBLIC_CONVEX_URL!, {
+  unsavedChangesWarning: false,
+});
+
+if (!convex) {
+  throw new Error("Missing Convex URL")
+}
+
+const InitialLayout  = () => {
+
+
+  const [fontsLoaded] = useFonts({
+    "Outfit-Regular": require("../assets/fonts/Outfit-Regular.ttf"),
+    "Outfit-Bold": require("../assets/fonts/Outfit-Bold.ttf"),
+    "Outfit-Light": require("../assets/fonts/Outfit-Light.ttf"),
+    "Outfit-ExtraLight": require("../assets/fonts/Outfit-ExtraLight.ttf"),
+    "Outfit-Medium": require("../assets/fonts/Outfit-Medium.ttf"),
+    "Outfit-Semibold": require("../assets/fonts/Outfit-SemiBold.ttf"),
+    "Outfit-ExtraBold": require("../assets/fonts/Outfit-ExtraBold.ttf"),
   });
 
+
+  const {isLoaded, isSignedIn} = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
+
+
   useEffect(() => {
-    if (loaded) {
+    if (fontsLoaded) {
       SplashScreen.hideAsync();
     }
-  }, [loaded]);
+  }, [fontsLoaded]);
 
-  if (!loaded) {
-    return null;
-  }
+  useEffect(() => {
+    if (!isLoaded) return;
+
+    const inAuthGroup = segments[0] === '(auth)';
+    const inPublicGroup = segments[0] === '(public)';
+
+    if (isSignedIn && !inAuthGroup) {
+      // Only redirect if not already in the auth group
+      router.replace('/(auth)/(tabs)/home');
+    } else if (!isSignedIn && !inPublicGroup) {
+      // Only redirect if not already in the public group
+      router.replace('/(public)/welcome');
+    }
+  }, [isSignedIn, isLoaded, segments]);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
+        <Stack.Screen name='(auth)' options={{headerShown: false}}/>
+        <Stack.Screen name='(public)' options={{headerShown: false}}/>
       </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
-  );
+  )
+
 }
+
+
+const RootLayout = () => {
+  return (
+      <GluestackUIProvider mode="light">
+        <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+          <ClerkLoaded>
+            <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
+              <InitialLayout />
+            </ConvexProviderWithClerk>
+
+          </ClerkLoaded>
+
+        </ClerkProvider>
+
+        <StatusBar style="dark" />
+      </GluestackUIProvider>
+  )
+}
+
+
+export default RootLayout;
